@@ -14,7 +14,7 @@ def get_dataset(name: str) -> datasets.DatasetDict:
     Get the dataset from the HuggingFace datasets library.
 
     Args:
-        name: The name of the HuggingFace dataset to load. Must be one of "wikitext2", "ptb", "c4" or "alpaca".
+        name: The name of the HuggingFace dataset to load. Must be one of "wikitext2", "ptb", "c4", "alpaca" or "gsm8k".
 
     Returns:
         The dataset.
@@ -34,6 +34,7 @@ def get_dataset(name: str) -> datasets.DatasetDict:
             "cols_to_remove": ['url', 'timestamp'],
         },
         "alpaca": {"path": "tatsu-lab/alpaca", "cols_to_remove": ['input', 'output', 'instruction']},
+        "gsm8k": {"path": "openai/gsm8k", "config_name": "main", "cols_to_remove": ['answer']},
     }
 
     if name not in ds_properties:
@@ -52,6 +53,12 @@ def get_dataset(name: str) -> datasets.DatasetDict:
         ds = ds["train"].train_test_split(test_size=0.2, seed=42)
         temp_ds = ds.pop("test")
         temp_ds = temp_ds.train_test_split(test_size=0.5, seed=42)
+        ds["test"] = temp_ds["train"]
+        ds["validation"] = temp_ds["test"]
+
+    # if gsm8k, create a validation set from the test set
+    if name == "gsm8k":
+        temp_ds = ds["test"].train_test_split(test_size=0.5, seed=42)
         ds["test"] = temp_ds["train"]
         ds["validation"] = temp_ds["test"]
 
