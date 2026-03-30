@@ -24,9 +24,14 @@ def get_layer0_inputs(model_adapter: ModelAdapter, batch: Tensor) -> tuple[Tenso
 
     NB: this won't work from OPT 350m.
     """
-    # Move embeddings to device.
+    # Move embeddings and other non-layer modules (e.g. rotary_emb) to device.
     for W in model_adapter.get_embeddings():
         W.weight = torch.nn.Parameter(W.weight.to(config.device))
+    inner_model = model_adapter.model
+    if hasattr(inner_model, 'model'):
+        for name, module in inner_model.model.named_children():
+            if name not in ('embed_tokens', 'layers'):
+                module.to(config.device)
 
     class Catcher(torch.nn.Module):
         def __init__(self):
@@ -58,9 +63,13 @@ def get_layer0_inputs(model_adapter: ModelAdapter, batch: Tensor) -> tuple[Tenso
     # put the layer back to normal
     model_adapter.set_raw_layer_at(0, layer0_adapter.layer)
 
-    # Move embeddings back to cpu, and clear GPU cache.
+    # Move embeddings and other non-layer modules back to cpu, and clear GPU cache.
     for W in model_adapter.get_embeddings():
         W.weight = torch.nn.Parameter(W.weight.to('cpu'))
+    if hasattr(inner_model, 'model'):
+        for name, module in inner_model.model.named_children():
+            if name not in ('embed_tokens', 'layers'):
+                module.to('cpu')
 
     # Run GC and cleanup GPU memory
     utils.cleanup_memory()
