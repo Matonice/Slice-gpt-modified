@@ -11,12 +11,15 @@ import torch
 import wandb
 from lm_eval import tasks
 from lm_eval import utils as lm_eval_utils
-from lm_eval.api.registry import ALL_TASKS
 from lm_eval.models.huggingface import HFLM
 from lm_eval.tasks import initialize_tasks
+from lm_eval.tasks import TaskManager
 
 from slicegpt import gpu_utils, hf_utils, utils
 from slicegpt.config import config
+
+task_manager = TaskManager()
+ALL_TASKS = task_manager.all_tasks
 
 TASK_METRIC_MAP = {
     "mmlu_abstract_algebra": "acc,none",
@@ -34,6 +37,8 @@ TASK_METRIC_MAP = {
     "hellaswag": "acc_norm,none",
     "piqa": "acc_norm,none",
     "winogrande": "acc,none",
+    "gsm8k": "exact_match,strict-match",
+    "ifeval": "prompt_level_strict_acc,none",
 }
 
 
