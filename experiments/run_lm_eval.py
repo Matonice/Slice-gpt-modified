@@ -12,7 +12,6 @@ import wandb
 from lm_eval import tasks
 from lm_eval import utils as lm_eval_utils
 from lm_eval.models.huggingface import HFLM
-from lm_eval.tasks import initialize_tasks
 from lm_eval.tasks import TaskManager
 
 from slicegpt import gpu_utils, hf_utils, utils
@@ -43,7 +42,6 @@ TASK_METRIC_MAP = {
 
 
 def eval_arg_parser(interactive: bool = True) -> argparse.Namespace:
-    initialize_tasks()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
@@ -86,7 +84,7 @@ def eval_arg_parser(interactive: bool = True) -> argparse.Namespace:
         '--tasks',
         nargs='+',
         default=["piqa", "hellaswag", "arc_easy", "arc_challenge", "winogrande"],
-        choices=lm_eval_utils.MultiChoice(tasks.ALL_TASKS),
+        choices=ALL_TASKS,
     )
     parser.add_argument('--num-fewshot', type=int, default=0, help="Number of fewshots for all tasks.")
     parser.add_argument("--save-dir", type=str, default=".", help="Path to save the lm eval results")
@@ -202,7 +200,8 @@ def eval_main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     # Use the logger from lm_eval, adding a file handler to write the log to file
-    logging = lm_eval_utils.eval_logger
+    import logging
+    logging = logging.getLogger('lm_eval')
     logging.addHandler(utils.create_file_handler(log_dir="log"))
 
     os.environ["WANDB__SERVICE_WAIT"] = "300"
