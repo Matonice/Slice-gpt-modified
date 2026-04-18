@@ -162,6 +162,7 @@ def eval_main(args: argparse.Namespace) -> None:
         model_adapter.model.to(config.device)
 
     ### LM Eval Harness ###
+    tokenizer.padding_side = 'left'
     hflm = HFLM(pretrained=model_adapter.model, tokenizer=tokenizer, batch_size=args.batch_size)
 
     if args.tasks is None:
