@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import time
 
 import lm_eval
 import torch
@@ -176,12 +177,46 @@ def eval_main(args: argparse.Namespace) -> None:
                 f"Please specify the metric to use for {task} in TASK_METRIC_MAP. Available info {TASK_METRIC_MAP}"
             )
 
-    results = lm_eval.simple_evaluate(hflm, tasks=task_names, num_fewshot=args.num_fewshot, batch_size=args.batch_size)[
-        'results'
-    ]
+    hflm_tokenizer = hflm.tokenizer
+
+    class TokenCountingWrapper:
+        def __init__(self, tokenizer):
+            self._tokenizer = tokenizer
+            self.total_tokens = 0
+
+        def __call__(self, text, *args, **kwargs):
+            result = self._tokenizer(text, *args, **kwargs)
+            if isinstance(text, str):
+                self.total_tokens += len(result['input_ids'])
+            else:
+                self.total_tokens += sum(len(ids) for ids in result['input_ids'])
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self._tokenizer, name)
+
+    token_counter = TokenCountingWrapper(hflm_tokenizer)
+    hflm.tokenizer = token_counter
+
+    start_time = time.perf_counter()
+    eval_output = lm_eval.simple_evaluate(
+        hflm, tasks=task_names, num_fewshot=args.num_fewshot, batch_size=args.batch_size, log_samples=True
+    )
+    elapsed_time = time.perf_counter() - start_time
+
+    results = eval_output['results']
+    samples = eval_output.get('samples', {})
+
+    hflm.tokenizer = hflm_tokenizer
+
+    total_tokens = token_counter.total_tokens
+    tokens_per_sec = total_tokens / elapsed_time if elapsed_time > 0 else 0.0
+    logging.info(f"Total tokens processed: {total_tokens}")
+    logging.info(f"Total evaluation time: {elapsed_time:.2f}s")
+    logging.info(f"Throughput: {tokens_per_sec:.2f} tokens/s")
 
     logging.info(results)
-    wandb.log(results)
+    wandb.log({**results, 'total_tokens': total_tokens, 'eval_time_s': elapsed_time, 'tokens_per_sec': tokens_per_sec})
 
     with open(f"{args.save_dir}/full_results_{args.num_fewshot}_shot.json", "w") as f:
         json.dump(results, f)
@@ -189,10 +224,35 @@ def eval_main(args: argparse.Namespace) -> None:
     metric_vals = {task: round(result.get(TASK_METRIC_MAP[task]), 4) for task, result in results.items()}
     acc_avg = calculate_avg_accuracy(task_names, results)
     metric_vals['average'] = round(acc_avg, 4)
+    metric_vals['tokens_per_sec'] = round(tokens_per_sec, 2)
+    metric_vals['total_tokens'] = total_tokens
+    metric_vals['eval_time_s'] = round(elapsed_time, 2)
     with open(f"{args.save_dir}/{args.num_fewshot}_shot_task_results.json", "w") as f:
         json.dump(metric_vals, f)
 
     wandb.log({'acc_avg': acc_avg})
+
+    result_output = {
+        "metrics": metric_vals,
+        "samples": {
+            task: [
+                {
+                    "doc_id": sample.get("doc_id"),
+                    "prompt": sample.get("arguments", [("",)])[0][0] if sample.get("arguments") else "",
+                    "target": sample.get("target", ""),
+                    "model_output": sample.get("resps", []),
+                    "filtered_output": sample.get("filtered_resps", []),
+                    "acc": sample.get("acc", None),
+                }
+                for sample in task_samples
+            ]
+            for task, task_samples in samples.items()
+        },
+    }
+    result_path = f"{args.save_dir}/result.json"
+    with open(result_path, "w") as f:
+        json.dump(result_output, f, indent=2, default=str)
+    logging.info(f"Generated outputs saved to {result_path}")
 
     logging.info(json.dumps(metric_vals, indent=4))
     logging.info(f"Average accuracy across tasks: {acc_avg}")
