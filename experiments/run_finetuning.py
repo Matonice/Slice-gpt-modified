@@ -118,7 +118,7 @@ def finetuning_arg_parser(interactive: bool = True) -> argparse.Namespace:
         "--ppl-eval-dataset",
         type=str,
         help="Dataset to evaluate perplexity.",
-        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k"],
+        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k", "olmo_if"],
         default="wikitext2",
     )
     parser.add_argument(
@@ -137,7 +137,7 @@ def finetuning_arg_parser(interactive: bool = True) -> argparse.Namespace:
         "--finetune-dataset",
         type=str,
         help="Dataset to finetune on.",
-        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k"],
+        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k", "olmo_if"],
         default="wikitext2",
     )
     parser.add_argument(
@@ -243,7 +243,7 @@ def finetuning_main(args: argparse.Namespace) -> None:
         model_adapter, tokenizer = hf_utils.get_model_and_tokenizer(args.model, args.model_path, token=args.hf_token)
 
     # get the dataset for perplexity evaluation
-    ppl_ds = data_utils.get_dataset(args.ppl_eval_dataset)
+    ppl_ds = data_utils.get_dataset(args.ppl_eval_dataset, tokenizer=tokenizer)
     ppl_eval_loader = data_utils.prepare_dataloader(
         dataset=ppl_ds["validation"],
         tokenizer=tokenizer,
@@ -267,7 +267,7 @@ def finetuning_main(args: argparse.Namespace) -> None:
     utils.cleanup_memory()
 
     # get the dataset for finetuning
-    finetune_ds = data_utils.get_dataset(args.finetune_dataset)
+    finetune_ds = data_utils.get_dataset(args.finetune_dataset, tokenizer=tokenizer)
     finetune_train_loader = data_utils.prepare_dataloader(
         dataset=finetune_ds["train"],
         tokenizer=tokenizer,

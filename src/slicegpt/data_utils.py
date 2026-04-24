@@ -9,12 +9,17 @@ from torch.utils.data import DataLoader, Dataset, SubsetRandomSampler
 from transformers import PreTrainedTokenizerBase
 
 
-def get_dataset(name: str) -> datasets.DatasetDict:
+def get_dataset(
+    name: str, tokenizer: PreTrainedTokenizerBase | None = None
+) -> datasets.DatasetDict:
     """
     Get the dataset from the HuggingFace datasets library.
 
     Args:
-        name: The name of the HuggingFace dataset to load. Must be one of "wikitext2", "ptb", "c4", "alpaca" or "gsm8k".
+        name: The name of the HuggingFace dataset to load. Must be one of "wikitext2", "ptb", "c4", "alpaca", "gsm8k", or "olmo_if".
+        tokenizer: Optional tokenizer. Used to render chat-formatted datasets (e.g. olmo_if)
+            via apply_chat_template; if omitted or the tokenizer has no chat template,
+            a plain "role: content" format is used as a fallback.
 
     Returns:
         The dataset.
@@ -35,6 +40,7 @@ def get_dataset(name: str) -> datasets.DatasetDict:
         },
         "alpaca": {"path": "tatsu-lab/alpaca", "cols_to_remove": ['input', 'output', 'instruction']},
         "gsm8k": {"path": "openai/gsm8k", "config_name": "main"},
+        "olmo_if": {"path": "allenai/tulu-3-sft-mixture"},
     }
 
     if name not in ds_properties:
@@ -63,6 +69,34 @@ def get_dataset(name: str) -> datasets.DatasetDict:
             remove_columns=["question", "answer"],
         )
         temp_ds = ds["test"].train_test_split(test_size=0.5, seed=42)
+        ds["test"] = temp_ds["train"]
+        ds["validation"] = temp_ds["test"]
+
+    # if olmo_if (Tülu-3 SFT mixture), flatten the messages list into a single text column
+    # and carve small test/validation splits out of train (dataset ships with train-only).
+    if name == "olmo_if":
+        if tokenizer is not None and getattr(tokenizer, "chat_template", None):
+            def _render(example):
+                return {
+                    "text": tokenizer.apply_chat_template(
+                        example["messages"], tokenize=False
+                    )
+                }
+        else:
+            if tokenizer is not None:
+                logging.warning(
+                    "olmo_if: tokenizer has no chat_template; falling back to plain 'role: content' format."
+                )
+            def _render(example):
+                return {
+                    "text": "\n\n".join(
+                        f"{m['role']}: {m['content']}" for m in example["messages"]
+                    )
+                }
+        ds = ds.map(_render, remove_columns=ds["train"].column_names)
+        temp_ds = ds["train"].train_test_split(test_size=0.01, seed=42)
+        ds["train"] = temp_ds["train"]
+        temp_ds = temp_ds["test"].train_test_split(test_size=0.5, seed=42)
         ds["test"] = temp_ds["train"]
         ds["validation"] = temp_ds["test"]
 

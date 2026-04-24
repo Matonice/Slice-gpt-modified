@@ -41,7 +41,7 @@ def slicing_arg_parser(interactive: bool = True) -> argparse.Namespace:
         "--cal-dataset",
         type=str,
         help="Dataset to calibrate and calculate perplexity on.",
-        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k"],
+        choices=["wikitext2", "ptb", "c4", "alpaca", "gsm8k", "olmo_if"],
         default="wikitext2",
     )
     parser.add_argument(
@@ -165,7 +165,7 @@ def slicing_main(args: argparse.Namespace) -> None:
         else:
             model.to(config.device)
 
-    dataset = data_utils.get_dataset(args.cal_dataset)
+    dataset = data_utils.get_dataset(args.cal_dataset, tokenizer=tokenizer)
     train_dataset, test_dataset = dataset["train"], dataset["test"]
     train_loader = data_utils.prepare_dataloader(
         dataset=train_dataset,

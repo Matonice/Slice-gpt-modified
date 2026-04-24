@@ -39,7 +39,7 @@ def benchmarking_arg_parser(interactive: bool = True) -> argparse.Namespace:
         "--eval-dataset",
         type=str,
         help="Dataset to evaluate on.",
-        choices=["wikitext2", "ptb", "c4", "gsm8k"],
+        choices=["wikitext2", "ptb", "c4", "gsm8k", "olmo_if"],
         default="wikitext2",
     )
     parser.add_argument(
@@ -123,7 +123,7 @@ def benchmarking_main(args: argparse.Namespace) -> None:
     else:
         model_adapter.model.to(config.device)
 
-    dataset = data_utils.get_dataset(args.eval_dataset)
+    dataset = data_utils.get_dataset(args.eval_dataset, tokenizer=tokenizer)
     train_loader = data_utils.prepare_dataloader(
         dataset=dataset["train"],
         tokenizer=tokenizer,
