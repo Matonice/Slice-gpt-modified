@@ -34,7 +34,7 @@ def get_dataset(name: str) -> datasets.DatasetDict:
             "cols_to_remove": ['url', 'timestamp'],
         },
         "alpaca": {"path": "tatsu-lab/alpaca", "cols_to_remove": ['input', 'output', 'instruction']},
-        "gsm8k": {"path": "openai/gsm8k", "config_name": "main", "cols_to_remove": ['answer']},
+        "gsm8k": {"path": "openai/gsm8k", "config_name": "main"},
     }
 
     if name not in ds_properties:
@@ -56,8 +56,12 @@ def get_dataset(name: str) -> datasets.DatasetDict:
         ds["test"] = temp_ds["train"]
         ds["validation"] = temp_ds["test"]
 
-    # if gsm8k, create a validation set from the test set
+    # if gsm8k, combine question+answer into a single text column and create a validation set from the test set
     if name == "gsm8k":
+        ds = ds.map(
+            lambda x: {"text": x["question"] + "\n" + x["answer"]},
+            remove_columns=["question", "answer"],
+        )
         temp_ds = ds["test"].train_test_split(test_size=0.5, seed=42)
         ds["test"] = temp_ds["train"]
         ds["validation"] = temp_ds["test"]
@@ -118,6 +122,7 @@ def prepare_dataloader(
     max_seqlen: int = 2048,
     batch_size: int = 1,
     nsamples: int = 128,
+    ntokens: int | None = None,
     varied_seqlen: bool = False,
     seed=42,
 ) -> DataLoader[dict[str, torch.Tensor]]:
@@ -129,7 +134,10 @@ def prepare_dataloader(
         tokenizer: The tokenizer to use.
         max_seqlen: The maximum sequence length, used for truncation of sequences in the dataset.
         batch_size: The batch size.
-        nsamples: The number of samples to produce.
+        nsamples: The number of samples to produce. Ignored if ntokens is set.
+        ntokens: Total token budget. If set, takes precedence over nsamples: for fixed-seqlen
+            packing the number of samples is ntokens // max_seqlen; for varied_seqlen it
+            selects rows (in random order) until the cumulative token count reaches ntokens.
         varied_seqlen: If False, concatenate multiple examples from the dataset into one example until max_seqlen is reached.
         seed: The seed for sampling the dataset.
 
@@ -137,6 +145,12 @@ def prepare_dataloader(
         A DataLoader.
     """
     logging.info(f"Preparing dataloader")
+
+    if ntokens is not None and not varied_seqlen:
+        nsamples = max(1, ntokens // max_seqlen)
+        logging.info(
+            f"ntokens={ntokens} budget at max_seqlen={max_seqlen} -> nsamples={nsamples}"
+        )
 
     if not varied_seqlen and not nsamples:
         logging.warning(
@@ -170,7 +184,33 @@ def prepare_dataloader(
                 tokens = tokens[:max_seqlen]  # truncate to max_seqlen
                 new_data_list.append(tokenizer.convert_tokens_to_string(tokens))
 
+        if len(new_data_list) < nsamples:
+            logging.warning(
+                f"Could only pack {len(new_data_list)} samples of {max_seqlen} tokens "
+                f"(requested {nsamples}). The token budget exceeds what this dataset can provide."
+            )
+            nsamples = len(new_data_list)
+
         ds = datasets.Dataset.from_dict({data_name: new_data_list})
+    elif ntokens is not None:
+        # varied-seqlen path with a token budget: select whole rows in random order
+        # until the cumulative token count reaches ntokens.
+        torch.manual_seed(seed)
+        shuffled = torch.randperm(len(ds)).tolist()
+        selected = []
+        cum_tokens = 0
+        for idx in shuffled:
+            selected.append(idx)
+            cum_tokens += len(tokenizer.tokenize(ds[idx][data_name]))
+            if cum_tokens >= ntokens:
+                break
+        if cum_tokens < ntokens:
+            logging.warning(
+                f"Token budget {ntokens} not met with varied_seqlen=True: only {cum_tokens} "
+                f"tokens available across {len(selected)} rows."
+            )
+        ds = ds.select(selected)
+        nsamples = len(selected)
 
     def tokenize(data_batch):
         # tokenize then pad each batch according to the longest sequence in the batch

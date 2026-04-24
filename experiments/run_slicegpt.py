@@ -47,8 +47,14 @@ def slicing_arg_parser(interactive: bool = True) -> argparse.Namespace:
     parser.add_argument(
         "--cal-nsamples",
         type=int,
-        help="Number of samples of the calibration data to load.",
+        help="Number of samples of the calibration data to load. Ignored if --cal-ntokens is set.",
         default=128,
+    )
+    parser.add_argument(
+        "--cal-ntokens",
+        type=int,
+        help="Token budget for calibration data. If set, overrides --cal-nsamples.",
+        default=1_100_000,
     )
     parser.add_argument("--cal-batch-size", type=int, default=16, help="Batch size for loading the calibration data.")
     parser.add_argument(
@@ -167,6 +173,7 @@ def slicing_main(args: argparse.Namespace) -> None:
         max_seqlen=args.cal_max_seqlen,
         batch_size=args.cal_batch_size,
         nsamples=args.cal_nsamples,
+        ntokens=args.cal_ntokens,
         varied_seqlen=args.varied_seqlen,
         seed=args.seed,
     )
